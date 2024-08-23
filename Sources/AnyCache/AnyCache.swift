@@ -16,8 +16,7 @@ open class AnyCache {
 
     public init(name: String,
                 memoryStorageConfig: MemoryStorageConfig = .default,
-                diskStorageConfig: DiskStorageConfig = .default)
-    {
+                diskStorageConfig: DiskStorageConfig = .default) {
         memoryStorage = MemoryStorage(name: name, config: memoryStorageConfig)
         diskStorage = DiskStorage(name: name, config: diskStorageConfig)
         _trimRecursively()
@@ -61,6 +60,16 @@ open class AnyCache {
         return memoryStorage.containsEntity(forKey: key) || diskStorage.containsEntity(forKey: key)
     }
 
+    @available(iOS 13.0.0, *)
+    @available(macOS 10.15.0, *)
+    open func object<T: CacheSerializable>(forKey key: String, as type: T.Type) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            self.object(forKey: key, as: type) { result in
+                continuation.resume(with: result)
+            }
+        }
+    }
+
     open func object<T: CacheSerializable>(forKey key: String, as type: T.Type, completion: @escaping (Result<T, Error>) -> Void) {
         if let entity = memoryStorage.entity(forKey: key) {
             do {
@@ -87,16 +96,6 @@ open class AnyCache {
         }
     }
 
-    private func _serializableObject<T: CacheSerializable>(forKey key: String, as type: T.Type) throws -> T {
-        if let entity = memoryStorage.entity(forKey: key) {
-            return try loadEntity(key: key, entity: entity, as: T.self)
-        } else if let entity = diskStorage.entity(forKey: key) {
-            try? memoryStorage.setEntity(entity, forKey: key)
-            return try loadEntity(key: key, entity: entity, as: T.self)
-        }
-        throw StorageError.notFound
-    }
-
     open func object<T: CacheSerializable>(forKey key: String, as type: T.Type) throws -> T {
         return try _serializableObject(forKey: key, as: type)
     }
@@ -107,24 +106,6 @@ open class AnyCache {
 
     open func object<T: Codable>(forKey key: String, as type: T.Type) throws -> T {
         return try _serializableObject(forKey: key, as: CodableContainer<T>.self).object
-    }
-
-    private func _setSerializable<T: CacheSerializable>(_ object: T, forKey key: String, expiry: Expiry = .never, diskStorageCompletion: (() -> Void)? = nil) throws {
-        if unwrap(object) is NSNull {
-            removeObject(forKey: key)
-            return
-        }
-
-        let entity = Entity(object: object, filePath: URL(fileURLWithPath: ""), cost: 0, expiry: expiry)
-        try memoryStorage.setEntity(entity, forKey: key)
-        try diskStorage.setEntity(entity, forKey: key, completion: diskStorageCompletion)
-
-        debouncer.debounce { [weak self] in
-            self?.trimQueue.async { [weak self] in
-                self?.memoryStorage.removeAllExpires()
-                self?.diskStorage.removeAllExpires()
-            }
-        }
     }
 
     open func setObject<T: CacheSerializable>(_ object: T, forKey key: String, expiry: Expiry = .never, diskStorageCompletion: (() -> Void)? = nil) throws {
@@ -146,6 +127,34 @@ open class AnyCache {
 }
 
 private extension AnyCache {
+    private func _serializableObject<T: CacheSerializable>(forKey key: String, as type: T.Type) throws -> T {
+        if let entity = memoryStorage.entity(forKey: key) {
+            return try loadEntity(key: key, entity: entity, as: T.self)
+        } else if let entity = diskStorage.entity(forKey: key) {
+            try? memoryStorage.setEntity(entity, forKey: key)
+            return try loadEntity(key: key, entity: entity, as: T.self)
+        }
+        throw StorageError.notFound
+    }
+
+    private func _setSerializable<T: CacheSerializable>(_ object: T, forKey key: String, expiry: Expiry = .never, diskStorageCompletion: (() -> Void)? = nil) throws {
+        if unwrap(object) is NSNull {
+            removeObject(forKey: key)
+            return
+        }
+
+        let entity = Entity(object: object, filePath: URL(fileURLWithPath: ""), cost: 0, expiry: expiry)
+        try memoryStorage.setEntity(entity, forKey: key)
+        try diskStorage.setEntity(entity, forKey: key, completion: diskStorageCompletion)
+
+        debouncer.debounce { [weak self] in
+            self?.trimQueue.async { [weak self] in
+                self?.memoryStorage.removeAllExpires()
+                self?.diskStorage.removeAllExpires()
+            }
+        }
+    }
+
     func _trimRecursively() {
         trimQueue.asyncAfter(deadline: .now() + autoTrimInterval) { [weak self] in
             guard let self = self else { return }
