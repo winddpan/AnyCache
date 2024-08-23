@@ -60,16 +60,6 @@ open class AnyCache {
         return memoryStorage.containsEntity(forKey: key) || diskStorage.containsEntity(forKey: key)
     }
 
-    @available(iOS 13.0.0, *)
-    @available(macOS 10.15.0, *)
-    open func object<T: CacheSerializable>(forKey key: String, as type: T.Type) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            self.object(forKey: key, as: type) { result in
-                continuation.resume(with: result)
-            }
-        }
-    }
-
     open func object<T: CacheSerializable>(forKey key: String, as type: T.Type, completion: @escaping (Result<T, Error>) -> Void) {
         if let entity = memoryStorage.entity(forKey: key) {
             do {
@@ -96,6 +86,16 @@ open class AnyCache {
         }
     }
 
+    @available(iOS 13.0.0, *)
+    @available(macOS 10.15.0, *)
+    open func object<T: CacheSerializable>(forKey key: String, as type: T.Type) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            self.object(forKey: key, as: type) { result in
+                continuation.resume(with: result)
+            }
+        }
+    }
+
     open func object<T: CacheSerializable>(forKey key: String, as type: T.Type) throws -> T {
         return try _serializableObject(forKey: key, as: type)
     }
@@ -104,16 +104,60 @@ open class AnyCache {
         return try _serializableObject(forKey: key, as: type)
     }
 
+    @available(iOS 13.0.0, *)
+    @available(macOS 10.15.0, *)
+    open func object<T: CacheSerializable & Codable>(forKey key: String, as type: T.Type) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            self.object(forKey: key, as: type) { result in
+                continuation.resume(with: result)
+            }
+        }
+    }
+
     open func object<T: Codable>(forKey key: String, as type: T.Type) throws -> T {
         return try _serializableObject(forKey: key, as: CodableContainer<T>.self).object
+    }
+
+    @available(iOS 13.0.0, *)
+    @available(macOS 10.15.0, *)
+    open func object<T: Codable>(forKey key: String, as type: T.Type) async throws -> T {
+        try await object(forKey: key, as: CodableContainer<T>.self).object
     }
 
     open func setObject<T: CacheSerializable>(_ object: T, forKey key: String, expiry: Expiry = .never, diskStorageCompletion: (() -> Void)? = nil) throws {
         try _setSerializable(object, forKey: key, expiry: expiry, diskStorageCompletion: diskStorageCompletion)
     }
 
+    @available(iOS 13.0.0, *)
+    @available(macOS 10.15.0, *)
+    open func setObject<T: CacheSerializable>(_ object: T, forKey key: String, expiry: Expiry = .never) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            do {
+                try setObject(object, forKey: key) {
+                    continuation.resume()
+                }
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
     open func setObject<T: CacheSerializable & Codable>(_ object: T, forKey key: String, expiry: Expiry = .never, diskStorageCompletion: (() -> Void)? = nil) throws {
         try _setSerializable(object, forKey: key, expiry: expiry, diskStorageCompletion: diskStorageCompletion)
+    }
+
+    @available(iOS 13.0.0, *)
+    @available(macOS 10.15.0, *)
+    open func setObject<T: CacheSerializable & Codable>(_ object: T, forKey key: String, expiry: Expiry = .never) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            do {
+                try setObject(object, forKey: key) {
+                    continuation.resume()
+                }
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
     }
 
     open func setObject<T: Codable>(_ object: T, forKey key: String, expiry: Expiry = .never, diskStorageCompletion: (() -> Void)? = nil) throws {
@@ -121,8 +165,21 @@ open class AnyCache {
             removeObject(forKey: key)
             return
         }
-
         try _setSerializable(CodableContainer(object), forKey: key, expiry: expiry, diskStorageCompletion: diskStorageCompletion)
+    }
+
+    @available(iOS 13.0.0, *)
+    @available(macOS 10.15.0, *)
+    open func setObject<T: Codable>(_ object: T, forKey key: String, expiry: Expiry = .never) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            do {
+                try setObject(object, forKey: key) {
+                    continuation.resume()
+                }
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
     }
 }
 
